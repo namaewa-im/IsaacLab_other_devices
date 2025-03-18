@@ -41,7 +41,7 @@ import torch
 
 import omni.log
 
-from isaaclab.devices import Se3Gamepad, Se3HandTracking, Se3Keyboard, Se3SpaceMouse
+from isaaclab.devices import Se3Gamepad, Se3HandTracking, Se3Keyboard, Se3SpaceMouse, Se3Extreme3DPro
 from isaaclab.envs import ViewerCfg
 from isaaclab.envs.ui import ViewportCameraController
 from isaaclab.managers import TerminationTermCfg as DoneTerm
@@ -50,6 +50,7 @@ import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.manager_based.manipulation.lift import mdp
 from isaaclab_tasks.utils import parse_env_cfg
 
+import rclpy
 
 def pre_process_actions(delta_pose: torch.Tensor, gripper_command: bool) -> torch.Tensor:
     """Pre-process actions for the environment."""
@@ -107,9 +108,15 @@ def main():
         teleop_interface.add_callback("RESET", env.reset)
         viewer = ViewerCfg(eye=(-0.25, -0.3, 0.5), lookat=(0.6, 0, 0), asset_name="viewer")
         ViewportCameraController(env, viewer)
+    elif args_cli.teleop_device.lower() == "extreme3d":
+        rclpy.init()
+        teleop_interface = Se3Extreme3DPro(
+            pos_sensitivity=0.05 * args_cli.sensitivity, rot_sensitivity=0.05 * args_cli.sensitivity
+        )
+        print("[DEBUG] Joystick Teleop Interface Created")
     else:
         raise ValueError(
-            f"Invalid device interface '{args_cli.teleop_device}'. Supported: 'keyboard', 'spacemouse''handtracking'."
+            f"Invalid device interface '{args_cli.teleop_device}'. Supported: 'keyboard', 'spacemouse', 'handtracking', 'extreme3d'."
         )
 
     # add teleoperation key for env reset
@@ -137,6 +144,10 @@ def main():
             delta_pose = torch.tensor(delta_pose, device=env.device).repeat(env.num_envs, 1)
             # pre-process actions
             actions = pre_process_actions(delta_pose, gripper_command)
+
+            # print("[DEBUG] Delta Pose:", delta_pose)
+            # print("[DEBUG] Action:", actions)
+
             # apply actions
             env.step(actions)
 
