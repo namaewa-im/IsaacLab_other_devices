@@ -20,6 +20,7 @@ optional arguments:
     --step_hz                 Environment stepping rate in Hz. (default: 30)
     --num_demos               Number of demonstrations to record. (default: 0)
     --num_success_steps       Number of continuous steps with task success for concluding a demo as successful. (default: 10)
+    --sensitivity             Sensitivity factor. (default: 1.0)
 """
 
 """Launch Isaac Sim Simulator first."""
@@ -46,6 +47,8 @@ parser.add_argument(
     default=10,
     help="Number of continuous steps with task success for concluding a demo as successful. Default is 10.",
 )
+
+parser.add_argument("--sensitivity", type=float, default=1.0, help="Sensitivity factor.")
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -65,9 +68,10 @@ import gymnasium as gym
 import time
 import torch
 
+import rclpy
 import omni.log
 
-from isaaclab.devices import Se3HandTracking, Se3Keyboard, Se3SpaceMouse
+from isaaclab.devices import Se3HandTracking, Se3Keyboard, Se3SpaceMouse, Se3Extreme3DPro
 from isaaclab.envs import ViewerCfg
 from isaaclab.envs.mdp.recorders.recorders_cfg import ActionStateRecorderManagerCfg
 from isaaclab.envs.ui import ViewportCameraController
@@ -102,6 +106,26 @@ class RateLimiter:
         if self.last_time < time.time():
             while self.last_time < time.time():
                 self.last_time += self.sleep_duration
+
+# Add Joystick Listener
+from rclpy.node import Node
+from sensor_msgs.msg import Joy
+
+class JoystickListener(Node):
+    def __init__(self, reset_callback):
+        super().__init__('joystick_listener')
+        self.reset_callback = reset_callback
+        self.subscription = self.create_subscription(
+            Joy,
+            '/joy',  # 조이스틱 데이터가 들어오는 토픽 이름 (기본적으로 /joy 사용)
+            self.joy_callback,
+            10  # 큐 사이즈
+        )
+
+    def joy_callback(self, msg):
+        if len(msg.buttons) > 11 and msg.buttons[5] == 1:
+            # self.get_logger().info("Joystick Button 6 Pressed: Resetting recording instance")
+            self.reset_callback()
 
 
 def pre_process_actions(delta_pose: torch.Tensor, gripper_command: bool) -> torch.Tensor:
@@ -171,6 +195,7 @@ def main():
         nonlocal should_reset_recording_instance
         should_reset_recording_instance = True
 
+    
     # create controller
     if args_cli.teleop_device.lower() == "keyboard":
         teleop_interface = Se3Keyboard(pos_sensitivity=0.2, rot_sensitivity=0.5)
@@ -183,9 +208,32 @@ def main():
         teleop_interface.add_callback("RESET", reset_recording_instance)
         viewer = ViewerCfg(eye=(-0.25, -0.3, 0.5), lookat=(0.6, 0, 0), asset_name="viewer")
         ViewportCameraController(env, viewer)
+    # elif args_cli.teleop_device.lower() == "extreme3d":
+    #     rclpy.init()
+    #     teleop_interface = Se3Extreme3DPro(
+    #         pos_sensitivity=0.05 * args_cli.sensitivity, rot_sensitivity=0.05 * args_cli.sensitivity
+    #     )
+    #     print("[DEBUG] Joystick Teleop Interface Created")
+    if args_cli.teleop_device.lower() == "extreme3d":
+        rclpy.init()
+        teleop_interface = Se3Extreme3DPro(
+            pos_sensitivity=0.05 * args_cli.sensitivity, rot_sensitivity=0.05 * args_cli.sensitivity
+        )
+        print("[DEBUG] Joystick Teleop Interface Created")
+
+        # ROS2 노드 생성 및 실행
+        joystick_listener = JoystickListener(reset_recording_instance)
+        executor = rclpy.executors.SingleThreadedExecutor()
+        executor.add_node(joystick_listener)
+
+        # 스레드에서 실행
+        import threading
+        joystick_thread = threading.Thread(target=executor.spin, daemon=True)
+        joystick_thread.start()
+        
     else:
         raise ValueError(
-            f"Invalid device interface '{args_cli.teleop_device}'. Supported: 'keyboard', 'spacemouse', 'handtracking'."
+            f"Invalid device interface '{args_cli.teleop_device}'. Supported: 'keyboard', 'spacemouse', 'handtracking', 'extreme3d'."
         )
 
     teleop_interface.add_callback("R", reset_recording_instance)
@@ -202,10 +250,13 @@ def main():
         while True:
             # get keyboard command
             delta_pose, gripper_command = teleop_interface.advance()
+            delta_pose = delta_pose.astype("float32")
             # convert to torch
-            delta_pose = torch.tensor(delta_pose, dtype=torch.float, device=env.device).repeat(env.num_envs, 1)
-            # compute actions based on environment
+            delta_pose = torch.tensor(delta_pose, device=env.device).repeat(env.num_envs, 1)
             actions = pre_process_actions(delta_pose, gripper_command)
+
+            # print("[DEBUG] Delta Pose:", delta_pose)
+            # print("[DEBUG] Action:", actions)
 
             # perform action on environment
             env.step(actions)
