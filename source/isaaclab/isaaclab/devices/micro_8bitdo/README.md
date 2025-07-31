@@ -1,6 +1,6 @@
 # 8BitDo Controller for Isaac Lab
 
-8BitDo Controller를 Isaac Lab에서 SE(2) 및 SE(3) 제어용 디바이스로 사용할 수 있습니다.
+8BitDo Controller를 Isaac Lab에서 SE(2) 제어용 디바이스로 사용할 수 있습니다.
 
 ## 설정 방법
 
@@ -19,68 +19,81 @@ ROS 2 Joy 노드가 필요하지 않습니다.
 
 ### 3. Isaac Lab에서 사용
 
-#### SE(3) 제어 (3D 공간)
-```python
-from isaaclab.devices import Se38BitDo
-
-# 8BitDo Controller 디바이스 생성 (SE3)
-controller = Se38BitDo()
-
-# 메인 루프에서 사용
-while True:
-    delta_pose, gripper_state = controller.advance()
-    # delta_pose: [x, y, z, roll, pitch, yaw] 변화량
-    # gripper_state: True/False (그리퍼 열림/닫힘)
-```
-
 #### SE(2) 제어 (2D 평면)
 ```python
 from isaaclab.devices import Se28BitDo
 
 # 8BitDo Controller 디바이스 생성 (SE2)
-controller = Se28BitDo()
+controller = Se28BitDo(
+    pos_sensitivity=0.05,    # 위치 이동 감도
+    rot_sensitivity=1.6,     # 회전 감도
+    dead_zone=0.01          # 데드존
+)
 
 # 메인 루프에서 사용
 while True:
-    delta_pose, gripper_state = controller.advance()
-    # delta_pose: [x, y, 0, 0, 0, yaw] 변화량 (2D 평면)
-    # gripper_state: True/False (그리퍼 열림/닫힘)
+    base_command, gripper_state = controller.advance()
+    # base_command: [x, y, yaw] 속도 명령
+    # gripper_state: True/False (현재는 항상 False)
 ```
 
 ## 컨트롤 매핑
 
-### SE(3) 제어 (3D 공간)
-#### 축 제어
-- **왼쪽 스틱**: X, Y축 이동
-- **오른쪽 스틱**: Pitch, Yaw 회전
-- **D-pad**: Roll 회전 (좌우), Z축 이동 (상하)
-
-#### 버튼 제어
-- **A 버튼**: 그리퍼 토글 (열림/닫힘)
-- **B 버튼**: Z축 상승
-- **X 버튼**: Z축 하강
-- **Y 버튼**: (미사용)
-
 ### SE(2) 제어 (2D 평면)
 #### 축 제어
-- **왼쪽 스틱**: X, Y축 이동
-- **오른쪽 스틱**: Yaw 회전 (Z축 회전)
-- **D-pad**: 미세 조정 (좌우/상하)
+- **왼쪽 스틱 위**: 앞으로 이동 (X축 +)
+- **왼쪽 스틱 아래**: 뒤로 이동 (X축 -)
+- **왼쪽 스틱 왼쪽**: 왼쪽으로 이동 (Y축 +)
+- **왼쪽 스틱 오른쪽**: 오른쪽으로 이동 (Y축 -)
+
+#### 동작 방식
+- **1.0 입력**: 해당 방향으로 이동 시작
+- **0.0 입력**: 즉시 정지
+- **동시 입력**: 여러 방향 동시 이동 가능
+- **누적 방식**: 각 방향별로 독립적인 상태 관리
 
 #### 버튼 제어
-- **A 버튼**: 그리퍼 토글 (열림/닫힘)
-- **B 버튼**: 빠른 시계방향 회전
-- **X 버튼**: 빠른 반시계방향 회전
+- **A 버튼**: (미사용)
+- **B 버튼**: (미사용)
+- **X 버튼**: (미사용)
 - **Y 버튼**: (미사용)
+- **트리거/숄더**: (미사용)
 
 ## 특징
 
-- **높은 정밀도**: 16비트 축 해상도 (-32767 ~ 32767)
+- **높은 정밀도**: 16비트 축 해상도
 - **직관적인 조작**: 게임패드 스타일의 익숙한 조작감
-- **SE(3) 완전한 6DOF 제어**: 위치(X,Y,Z) + 회전(Roll,Pitch,Yaw)
 - **SE(2) 2D 평면 제어**: 위치(X,Y) + 회전(Yaw)
-- **그리퍼 제어**: 버튼으로 그리퍼 열림/닫힘 토글
-- **유연한 제어**: SE(2)와 SE(3) 모두 지원
+- **즉시 반응**: 누르면 이동, 떼면 정지
+- **동시 입력**: 여러 방향 동시 제어 가능
+- **carb 기반**: Isaac Lab과 완전 통합
+
+## 사용 예시
+
+### Isaac Lab에서 로봇 제어
+```python
+from isaaclab.devices import Se28BitDo
+
+# 컨트롤러 생성
+controller = Se28BitDo(
+    pos_sensitivity=0.05,
+    rot_sensitivity=1.6,
+    dead_zone=0.01
+)
+
+# 메인 루프
+while simulation_app.is_running():
+    # 컨트롤러 명령 가져오기
+    base_command, gripper_state = controller.advance()
+    
+    # 로봇에 명령 전달
+    # base_command[0]: 앞/뒤 이동
+    # base_command[1]: 좌/우 이동  
+    # base_command[2]: 회전
+    
+    # 시뮬레이션 스텝
+    obs, _, _, _, _ = env.step(action)
+```
 
 ## 문제 해결
 
@@ -100,81 +113,53 @@ ls -la /dev/input/event*
 
 # 권한 확인
 ls -la /dev/input/event16
-``` 
+```
+
+### 컨트롤러가 반응하지 않음
+1. **데드존 확인**: `dead_zone` 값을 늘려보세요 (0.01 → 0.05)
+2. **감도 조정**: `pos_sensitivity`, `rot_sensitivity` 값을 조정해보세요
+3. **입력 이벤트 확인**: 디버그 출력으로 입력이 들어오는지 확인
 
 ## 완성! carb 기반 8BitDo Controller 디바이스
 
-성공적으로 ROS 2 기반에서 **carb 기반**으로 변경했습니다! 🎮
+성공적으로 **carb 기반** 8BitDo Controller를 구현했습니다! 🎮
 
-### 🔄 **주요 변경사항**
+### 🔄 **주요 특징**
 
-**1. ROS 2 → carb 변경**:
-- `rclpy` → `carb.input`
-- `sensor_msgs.msg.Joy` → `carb.input.GamepadInput`
-- ROS 2 Node → Isaac Lab DeviceBase
+**1. carb 기반 구조**:
+- `carb.input` 직접 사용
+- Isaac Lab DeviceBase 상속
+- Omniverse와 완전 통합
 
-**2. carb 기반 구조**:
-```python
-import carb
-import omni
+**2. 직관적인 제어**:
+- 누르면 이동, 떼면 정지
+- 각 방향별 독립적인 상태 관리
+- 동시 입력 지원
 
-# Omniverse 인터페이스 획득
-self._appwindow = omni.appwindow.get_default_app_window()
-self._input = carb.input.acquire_input_interface()
-self._gamepad = self._appwindow.get_gamepad(0)
+**3. 유연한 설정**:
+- `pos_sensitivity`: 위치 이동 감도
+- `rot_sensitivity`: 회전 감도  
+- `dead_zone`: 데드존 설정
 
-# 이벤트 구독
-self._gamepad_sub = self._input.subscribe_to_gamepad_events(
-    self._gamepad,
-    lambda event, *args, obj=weakref.proxy(self): obj._on_gamepad_event(event, *args),
-)
-```
-
-### 📁 **업데이트된 파일 구조**
+### 📁 **파일 구조**
 
 ```
-source/isaaclab/isaaclab/devices/8bitdo/
-├── __init__.py              # SE2, SE3 클래스 export
+source/isaaclab/isaaclab/devices/micro_8bitdo/
+├── __init__.py              # Se28BitDo 클래스 export
 ├── se2_8bitdo.py           # carb 기반 SE2 제어
-├── se3_8bitdo.py           # carb 기반 SE3 제어
-├── test.py                  # carb 기반 테스트
-├── joy_config.yaml          # (더 이상 불필요)
-└── README.md               # carb 기반 사용법
+└── README.md               # 사용법 가이드
 ```
 
-### 📝 **사용 방법**
-
-**SE2 테스트**:
-```bash
-python source/isaaclab/isaaclab/devices/8bitdo/test.py se2
-```
-
-**SE3 테스트**:
-```bash
-python source/isaaclab/isaaclab/devices/8bitdo/test.py se3
-```
+### 🎮 **사용 방법**
 
 **Isaac Lab에서 사용**:
 ```python
-from isaaclab.devices import Se28BitDo, Se38BitDo
+from isaaclab.devices import Se28BitDo
 
-# SE2 제어 (2D 평면)
-controller_se2 = Se28BitDo()
-
-# SE3 제어 (3D 공간)
-controller_se3 = Se38BitDo()
-
-# 메인 루프
+controller = Se28BitDo()
 while True:
-    delta_pose, gripper_state = controller.advance()
+    base_command, gripper_state = controller.advance()
+    # base_command: [x, y, yaw] 속도 명령
 ```
 
-### 🎮 **carb 기반의 장점**
-
-1. **ROS 2 의존성 제거**: 별도 Joy 노드 불필요
-2. **더 빠른 응답**: 직접 하드웨어 접근
-3. **Isaac Lab 완전 통합**: 다른 디바이스들과 동일한 패턴
-4. **시뮬레이터 통합**: Omniverse와 완전 호환
-5. **간단한 설정**: 추가 설정 파일 불필요
-
-이제 8BitDo Controller가 Isaac Lab의 다른 디바이스들과 완전히 동일한 방식으로 작동합니다! 🎮🤖 
+이제 8BitDo Controller가 Isaac Lab에서 완벽하게 작동합니다! 🎮🤖 
