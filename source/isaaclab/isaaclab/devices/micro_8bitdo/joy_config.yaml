@@ -1,0 +1,34 @@
+# 8BitDo Controller joy node configuration
+joy_node:
+  ros__parameters:
+    # 8BitDo Controller 디바이스 경로 (event16)
+    device_id: 16
+    # 또는 직접 경로 지정
+    # device_path: "/dev/input/event16"
+    
+    # 축 범위 설정 (Pro Controller는 -32767 ~ 32767)
+    axis_max: 32767
+    axis_min: -32767
+    
+    # 버튼 매핑
+    button_mapping:
+      # A 버튼 (BTN_SOUTH)
+      a_button: 0
+      # B 버튼 (BTN_EAST) 
+      b_button: 1
+      # X 버튼 (BTN_NORTH)
+      x_button: 3
+      # Y 버튼 (BTN_WEST)
+      y_button: 2
+      
+    # 축 매핑
+    axis_mapping:
+      # 왼쪽 스틱
+      left_stick_x: 0  # ABS_X
+      left_stick_y: 1  # ABS_Y
+      # 오른쪽 스틱  
+      right_stick_x: 3  # ABS_RX
+      right_stick_y: 4  # ABS_RY
+      # D-pad
+      dpad_x: 16  # ABS_HAT0X
+      dpad_y: 17  # ABS_HAT0Y 
