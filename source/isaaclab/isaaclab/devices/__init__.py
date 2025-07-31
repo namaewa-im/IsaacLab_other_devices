@@ -25,3 +25,5 @@ from .keyboard import Se2Keyboard, Se3Keyboard
 from .openxr import Se3HandTracking
 from .spacemouse import Se2SpaceMouse, Se3SpaceMouse
 from .extreme3d import Se3Extreme3DPro
+from .micro_8bitdo import Se28BitDo, Se38BitDo
+
